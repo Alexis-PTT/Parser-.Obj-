@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <alexer.h>
+#include <unistd.h>
 
 #define ALEXER_IMPLEMENTATION
+#include <errno.h>
+
 #include "alexer.h"
 
 typedef enum {
@@ -46,9 +49,31 @@ const char *sl_comments[] = {
 };
 
 
+void copyDouble(double *resultPointer, Alexer_Token token,Alexer *l ){
+    if (!alexer_expect_id(l,token,ALEXER_INT)) return;
+    char* input2[token.end - token.begin];
+    memcpy(input2,token.begin,(token.end - token.begin)*sizeof(char));
+    alexer_get_token(l, &token );
+
+    if (!alexer_expect_id(l,token,ALEXER_ID(ALEXER_PUNCT,PUNCT_POINT))) return;
+    alexer_get_token(l, &token );
+
+    if (!alexer_expect_id(l,token,ALEXER_INT)) return;
+    char* input[token.end - token.begin + 1];
+    *input[0]='.';
+    memcpy(input+2,token.begin,(token.end - token.begin)*sizeof(char));
+    printf("%s",*input);
+
+    char str[32];
+    snprintf(str, sizeof(str), "%s%s%s", *input2, ".",*input);
+    *resultPointer = strtod(str, NULL);
+}
+
+
 int main()
 {
     const char *file_path = "example/path"; // The file path is only needed for diagnostic message
+
     const char *content =
     "# Blender v2.78 (sub 0) OBJ File: '12.blend\n"
     "# www.blender.org\n"
@@ -70,59 +95,87 @@ int main()
     Alexer_Token token = {0};
     bool end=false;
     uint64_t start_tokens[]={ALEXER_ID(ALEXER_KEYWORD,KEYWORD_VERTEX),
-                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_MTL)};
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_MTL),
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_G),
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_NORMAL),
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_POINT),
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_VERTEX),
+                            ALEXER_ID(ALEXER_KEYWORD,KEYWORD_S)};
     uint64_t start_double[]={ALEXER_ID(ALEXER_PUNCT,PUNCT_MINUS),
                             ALEXER_ID(ALEXER_INT,0)};
+    uint64_t cmdToken2 = 0;
     while (!end){
         alexer_get_token(&l, &token );
-        //printf("%lu",token.id);
-        if (!alexer_expect_one_of_ids(&l,token,start_tokens,2)) return 1;
-        switch (ALEXER_KIND(token.id))
-        {
+        // printf("debut \n");
+        // printf("%s \n",token.begin);
+        // printf("mid \n");
+        // printf("%s \n",token.end);
+        // printf("fin \n");
+        if (!alexer_expect_one_of_ids(&l,token,start_tokens,7)) return 1;
+        switch (ALEXER_KIND(token.id)){
             case  ALEXER_KEYWORD:
                 l.diagf(token.loc, "COMMANDE", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),
                         token.end - token.begin, token.begin);
-                Alexer_Token cmdToken=token;
-                switch (ALEXER_KIND(cmdToken.id)){
-                    case KEYWORD_VERTEX:
+                cmdToken2=token.id;
+                printf("%lu \n",cmdToken2);
+                printf("id MTL %lu \n",ALEXER_ID(ALEXER_KEYWORD,KEYWORD_MTL));
+                printf("id g %lu \n",ALEXER_ID(ALEXER_KEYWORD,KEYWORD_G));
+                switch (cmdToken2){
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_VERTEX):
                         break;
-                    case KEYWORD_G:
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_G):
+                        alexer_get_token(&l, &token );
+                        l.diagf(token.loc, "PARA 1???", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),token.end - token.begin, token.begin);
+                        if (!alexer_expect_id(&l,token,ALEXER_SYMBOL)) return 1;
+                        alexer_get_token(&l, &token );
+                        l.diagf(token.loc, "PARA 2", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),token.end - token.begin, token.begin);
+                        if (!alexer_expect_id(&l,token,ALEXER_ID(ALEXER_PUNCT,PUNCT_POINT))) return 1;
+                        alexer_get_token(&l, &token );
+                         l.diagf(token.loc, "PARA 3", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),token.end - token.begin, token.begin);
+                        if (!alexer_expect_id(&l,token, ALEXER_INT)) return 1;
+                        printf("passe g \n");
                         break;
-                    case KEYWORD_MTL:
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_MTL):
                         alexer_get_token(&l, &token );
                         if (!alexer_expect_id(&l,token,ALEXER_SYMBOL)) return 1;
                         l.diagf(token.loc, "PARA 1", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),
                                 token.end - token.begin, token.begin);
+                        //verifications of the file and it's format
                         alexer_get_token(&l, &token );
                         if (!alexer_expect_id(&l,token,ALEXER_ID(ALEXER_PUNCT,PUNCT_POINT))) return 1;
-                        l.diagf(token.loc, "verif point ", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),
-                                token.end - token.begin, token.begin);
                         alexer_get_token(&l, &token );
                         if (!alexer_expect_id(&l,token, ALEXER_SYMBOL)) return 1;
-                        l.diagf(token.loc, "verif format ", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),
-                                token.end - token.begin, token.begin);
+                        if (access("../Goldfish_01.mtl", F_OK) != 0) {
+                            puts( strerror( errno ) );
+                            return 1;//TODO : change the path part later
+                        }
                         break;
-                    case KEYWORD_USE:
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_USE):
+
                         break;
-                    case KEYWORD_POINT:
-                        if (!alexer_expect_id(&l,token,PUNCT_MINUS)) return 1;
-                        l.diagf(token.loc, "COMMANDE", "%s: %.*s", alexer_kind_name(ALEXER_KIND(token .id)),
-                                token.end - token.begin, token.begin);
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_POINT):
                         bool negation=false;
-                        double x =0.0F;
-                        alexer_get_token(&l, &token );
+                        if (!alexer_expect_one_of_ids(&l,token, start_double,2)) return 1;
+                        if (alexer_expect_id(&l,token,PUNCT_MINUS)){
+                            alexer_get_token(&l, &token );
+                            negation=true;
+                        }
+                        double *x=0;
+                        copyDouble(x,token,&l);
+
                         double y =0.0F;
                         double z =0.0F;
                         break;
-                    case KEYWORD_S:
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_S):
                         break;
-                    case KEYWORD_NORMAL:
+                    case ALEXER_ID(ALEXER_KEYWORD,KEYWORD_NORMAL):
                         break;
                     default:
                         break;
                 }
                 break;
-            case  ALEXER_END:
+
+            case ALEXER_END:
                 end = true;
                 break;
             default:
@@ -130,7 +183,6 @@ int main()
                        token.end - token.begin, token.begin);
                 break;
         }
-        end = true;
     }
     //while (alexer_get_token(&l, &t)) {
     //    l.diagf(t.loc, "INFO", "%s: %.*s", alexer_kind_name(ALEXER_KIND(t.id)), t.end - t.begin, t.begin);
